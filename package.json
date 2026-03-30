@@ -1,0 +1,47 @@
+{
+  "name": "@snapshot-site/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for the Snapshot Site API",
+  "homepage": "https://snapshot-site.com/api-docs",
+  "keywords": [
+    "mcp",
+    "snapshot",
+    "screenshot",
+    "visual-diff",
+    "api"
+  ],
+  "license": "MIT",
+  "author": "Snapshot Site",
+  "type": "module",
+  "main": "build/server.js",
+  "files": [
+    "build",
+    "README.md"
+  ],
+  "bin": {
+    "snapshot-site-mcp": "build/server.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf build",
+    "prepare": "pnpm run build",
+    "test": "pnpm run build",
+    "prepublishOnly": "pnpm run clean && pnpm run build"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "@snapshot-site/sdk": "link:../snapshot-site-typescript-sdk",
+    "zod": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
