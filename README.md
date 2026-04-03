@@ -39,6 +39,13 @@ pnpm install
 pnpm run build
 ```
 
+## Local stdio mode
+
+```bash
+export SNAPSHOT_SITE_API_KEY=ss_live_xxx
+snapshot-site-mcp
+```
+
 ## Claude Desktop configuration
 
 ```json
@@ -71,3 +78,75 @@ pnpm run build
   }
 }
 ```
+
+## Remote HTTP mode
+
+This package also supports a hosted MCP endpoint for clients using `mcp-remote`.
+
+Start the HTTP server:
+
+```bash
+pnpm start:http
+```
+
+or:
+
+```bash
+npx snapshot-site-mcp-http
+```
+
+Environment variables:
+
+```bash
+export PORT=3000
+export HOST=0.0.0.0
+export MCP_PATH=/
+export HEALTH_PATH=/healthz
+export MCP_ALLOWED_HOSTS=mcp.snapshot-site.com
+export SNAPSHOT_SITE_BASE_URL=https://api.prod.ss.snapshot-site.com
+```
+
+Remote client configuration with direct API key header:
+
+```json
+{
+  "mcpServers": {
+    "Snapshot Site MCP": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://mcp.snapshot-site.com",
+        "--header",
+        "x-snapshotsiteapi-key: ss_live_xxx"
+      ]
+    }
+  }
+}
+```
+
+The hosted server is stateless. Each request authenticates with `x-snapshotsiteapi-key`, which makes the service safe to run on multiple replicas without session affinity.
+
+## Zitadel / OAuth
+
+The remote HTTP server also supports OAuth bearer tokens validated against an OIDC issuer such as Zitadel.
+
+Environment variables:
+
+```bash
+export OIDC_ISSUER_URL=https://auth.snapshot-site.com
+export OIDC_AUDIENCE=snapshot-site-mcp
+export OIDC_REQUIRED_SCOPE=claudeai
+export RESOURCE_SERVER_URL=https://mcp.snapshot-site.com
+export ALLOW_API_KEY_AUTH=false
+export SNAPSHOT_SITE_API_KEY=ss_server_side_xxx
+```
+
+In bearer-token mode, the MCP server validates the incoming access token against the issuer JWKS and then uses the server-side Snapshot Site API key to call the backend API.
+
+It also exposes:
+
+```text
+GET /.well-known/oauth-protected-resource
+```
+
+so MCP clients can discover the authorization server metadata automatically.

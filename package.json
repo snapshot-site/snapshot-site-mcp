@@ -16,16 +16,20 @@
   "main": "build/server.js",
   "files": [
     "build",
-    "README.md"
+    "README.md",
+    "Dockerfile"
   ],
   "bin": {
-    "snapshot-site-mcp": "build/server.js"
+    "snapshot-site-mcp": "build/server.js",
+    "snapshot-site-mcp-http": "build/http.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf build",
     "prepare": "pnpm run build",
     "test": "pnpm run build",
+    "start": "node build/server.js",
+    "start:http": "node build/http.js",
     "prepublishOnly": "pnpm run clean && pnpm run build"
   },
   "engines": {
@@ -34,6 +38,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
     "@snapshot-site/sdk": "^0.1.0",
+    "jose": "^6.1.0",
     "zod": "^4.2.1"
   },
   "devDependencies": {
