@@ -111,7 +111,13 @@ async function readRawBody(req: IncomingMessage): Promise<Buffer> {
 
 function copyResponseHeaders(upstream: Response, res: ServerResponse) {
   upstream.headers.forEach((value, key) => {
-    if (key.toLowerCase() === "content-length") {
+    const lowerKey = key.toLowerCase();
+    if (
+      lowerKey === "content-length" ||
+      lowerKey === "content-encoding" ||
+      lowerKey === "transfer-encoding" ||
+      lowerKey === "connection"
+    ) {
       return;
     }
     res.setHeader(key, value);
@@ -143,14 +149,37 @@ function rewriteOidcConfiguration(payload: Record<string, unknown>, externalBase
   return rewritten;
 }
 
-function getRegistrationResponse(externalBaseUrl: string) {
+function normalizeRedirectUris(input: unknown): string[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const values = new Set<string>();
+  for (const value of input) {
+    const candidate = String(value || "").trim();
+    if (!candidate) {
+      continue;
+    }
+
+    try {
+      const url = new URL(candidate);
+      if (url.protocol !== "https:") {
+        continue;
+      }
+      values.add(url.toString());
+    } catch {
+      continue;
+    }
+  }
+
+  return [...values];
+}
+
+function getRegistrationResponse(externalBaseUrl: string, redirectUris: string[]) {
   return {
     client_id: OIDC_DISCOVERY_CLIENT_ID,
     client_name: RESOURCE_NAME,
-    redirect_uris: [
-      "https://claude.ai/api/mcp/auth_callback",
-      "https://chatgpt.com/connector/oauth/w0oabBZKFoKC",
-    ],
+    redirect_uris: redirectUris,
     grant_types: ["authorization_code", "refresh_token"],
     response_types: ["code"],
     token_endpoint_auth_method: "none",
@@ -165,43 +194,75 @@ async function proxyOidcRequest(req: IncomingMessage, res: ServerResponse, url: 
     return;
   }
 
-  const upstreamUrl = `${OIDC_ISSUER}${url.pathname}${url.search}`;
-  const headers = new Headers();
-  const contentType = getHeaderValue(req, "content-type");
-  const accept = getHeaderValue(req, "accept");
-  const userAgent = getHeaderValue(req, "user-agent");
-  if (contentType) headers.set("content-type", contentType);
-  if (accept) headers.set("accept", accept);
-  if (userAgent) headers.set("user-agent", userAgent);
+  try {
+    const issuerUrl = new URL(OIDC_ISSUER);
+    const externalBaseUrl = getExternalBaseUrl(req);
+    const upstreamUrl = `${OIDC_ISSUER}${url.pathname}${url.search}`;
+    const headers = new Headers();
+    const contentType = getHeaderValue(req, "content-type");
+    const accept = getHeaderValue(req, "accept");
+    const userAgent = getHeaderValue(req, "user-agent");
+    const cookie = getHeaderValue(req, "cookie");
+    const origin = getHeaderValue(req, "origin");
+    const referer = getHeaderValue(req, "referer");
+    if (contentType) headers.set("content-type", contentType);
+    if (accept) headers.set("accept", accept);
+    if (userAgent) headers.set("user-agent", userAgent);
+    if (cookie) headers.set("cookie", cookie);
+    if (origin) {
+      headers.set(
+        "origin",
+        origin.startsWith(externalBaseUrl) ? `${OIDC_ISSUER}${origin.slice(externalBaseUrl.length)}` : origin,
+      );
+    }
+    if (referer) {
+      headers.set(
+        "referer",
+        referer.startsWith(externalBaseUrl) ? `${OIDC_ISSUER}${referer.slice(externalBaseUrl.length)}` : referer,
+      );
+    }
+    headers.set("x-forwarded-proto", issuerUrl.protocol.replace(/:$/, ""));
+    headers.set("x-forwarded-host", issuerUrl.host);
 
-  const bodyBuffer = req.method && req.method !== "GET" && req.method !== "HEAD" ? await readRawBody(req) : undefined;
-  const body = bodyBuffer && bodyBuffer.byteLength > 0 ? new Uint8Array(bodyBuffer) : undefined;
-  const upstream = await fetch(upstreamUrl, {
-    method: req.method || "GET",
-    headers,
-    body,
-    redirect: "manual",
-  });
+    const bodyBuffer = req.method && req.method !== "GET" && req.method !== "HEAD" ? await readRawBody(req) : undefined;
+    const body = bodyBuffer && bodyBuffer.byteLength > 0 ? new Uint8Array(bodyBuffer) : undefined;
+    const upstream = await fetch(upstreamUrl, {
+      method: req.method || "GET",
+      headers,
+      body,
+      redirect: "manual",
+    });
 
-  res.statusCode = upstream.status;
-  copyResponseHeaders(upstream, res);
+    res.statusCode = upstream.status;
+    copyResponseHeaders(upstream, res);
 
-  const location = upstream.headers.get("location");
-  if (location && OIDC_ISSUER && location.startsWith(OIDC_ISSUER)) {
-    res.setHeader("location", `${getExternalBaseUrl(req)}${location.slice(OIDC_ISSUER.length)}`);
+    const location = upstream.headers.get("location");
+    if (location && OIDC_ISSUER && location.startsWith(OIDC_ISSUER)) {
+      const upstreamPath = location.slice(OIDC_ISSUER.length);
+      if (upstreamPath.startsWith("/ui/")) {
+        res.setHeader("location", location);
+      } else {
+        res.setHeader("location", `${externalBaseUrl}${upstreamPath}`);
+      }
+    }
+
+    if (url.pathname === "/.well-known/openid-configuration" && upstream.ok) {
+      const payload = (await upstream.json()) as Record<string, unknown>;
+      sendJson(res, upstream.status, rewriteOidcConfiguration(payload, externalBaseUrl));
+      return;
+    }
+
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    if (!res.hasHeader("content-length")) {
+      res.setHeader("content-length", String(buffer.byteLength));
+    }
+    res.end(buffer);
+  } catch (error) {
+    process.stderr.write(
+      `[snapshot-site-mcp] oidc proxy failed path=${url.pathname} search=${JSON.stringify(url.search)} error=${error instanceof Error ? error.stack || error.message : String(error)}\n`,
+    );
+    sendText(res, 502, "Bad Gateway");
   }
-
-  if (url.pathname === "/.well-known/openid-configuration" && upstream.ok) {
-    const payload = (await upstream.json()) as Record<string, unknown>;
-    sendJson(res, upstream.status, rewriteOidcConfiguration(payload, getExternalBaseUrl(req)));
-    return;
-  }
-
-  const buffer = Buffer.from(await upstream.arrayBuffer());
-  if (!res.hasHeader("content-length")) {
-    res.setHeader("content-length", String(buffer.byteLength));
-  }
-  res.end(buffer);
 }
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -331,15 +392,45 @@ const httpServer = createServer(async (req, res) => {
       return;
     }
 
-    sendJson(res, 200, getRegistrationResponse(getExternalBaseUrl(req)));
+    let redirectUris: string[] = [];
+    if (req.method === "POST") {
+      try {
+        const body = await readJsonBody(req);
+        redirectUris = normalizeRedirectUris((body as { redirect_uris?: unknown } | undefined)?.redirect_uris);
+      } catch {
+        sendJson(res, 400, {
+          error: "invalid_client_metadata",
+          error_description: "Unable to parse registration request body",
+        });
+        return;
+      }
+    }
+
+    if (redirectUris.length === 0) {
+      sendJson(res, 400, {
+        error: "invalid_redirect_uri",
+        error_description: "At least one HTTPS redirect_uri is required",
+      });
+      return;
+    }
+
+    sendJson(res, 200, getRegistrationResponse(getExternalBaseUrl(req), redirectUris));
     return;
   }
 
   if (
     url.pathname === "/.well-known/openid-configuration" ||
-    url.pathname.startsWith("/oauth/v2/")
+    url.pathname.startsWith("/oauth/v2/") ||
+    url.pathname === "/oidc/v1/end_session"
   ) {
     await proxyOidcRequest(req, res, url);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname.startsWith("/ui/") && OIDC_ISSUER) {
+    res.statusCode = 302;
+    res.setHeader("location", `${OIDC_ISSUER}${url.pathname}${url.search}`);
+    res.end();
     return;
   }
 

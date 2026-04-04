@@ -308,6 +308,7 @@ It also exposes and proxies:
 GET /.well-known/oauth-protected-resource
 GET /.well-known/openid-configuration
 GET/POST /oauth/v2/*
+GET /ui/*
 GET/POST /oauth/register
 ```
 
@@ -334,4 +335,4 @@ The MCP server also exposes a lightweight `registration_endpoint` compatibility 
 POST https://mcp.snapshot-site.com/oauth/register
 ```
 
-This shim currently returns the preconfigured public PKCE client instead of provisioning a brand-new Zitadel client per installation. It is meant to improve compatibility with clients that expect DCR-style discovery, while keeping the existing manual flow as fallback.
+This shim currently returns the preconfigured public PKCE client instead of provisioning a brand-new Zitadel client per installation. It validates and reflects the `redirect_uris` requested by the client, as long as they are valid HTTPS URLs. It is meant to improve compatibility with clients that expect DCR-style discovery, while keeping the existing manual flow as fallback.
