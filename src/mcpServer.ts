@@ -12,7 +12,17 @@ export const MCP_SERVER_NAME = "snapshot-site";
 export const MCP_SERVER_VERSION = "0.1.1";
 export const MCP_USER_AGENT = "@snapshot-site/mcp/0.1.1";
 
-export type SnapshotSiteClientFactory = (tool: SupportedTool) => Promise<SnapshotSiteClient> | SnapshotSiteClient;
+export type ForwardedNetworkHeaders = {
+  xForwardedFor?: string;
+  xRealIp?: string;
+  trueClientIp?: string;
+  cfConnectingIp?: string;
+};
+
+export type SnapshotSiteClientFactory = (
+  tool: SupportedTool,
+  forwardedHeaders?: ForwardedNetworkHeaders,
+) => Promise<SnapshotSiteClient> | SnapshotSiteClient;
 
 function asText(data: unknown) {
   return JSON.stringify(data, null, 2);
@@ -37,7 +47,11 @@ export function createEnvClient(): SnapshotSiteClient {
   });
 }
 
-export function createApiKeyClient(apiKey: string, baseUrl = process.env.SNAPSHOT_SITE_BASE_URL): SnapshotSiteClient {
+export function createApiKeyClient(
+  apiKey: string,
+  baseUrl = process.env.SNAPSHOT_SITE_BASE_URL,
+  forwardedHeaders?: ForwardedNetworkHeaders,
+): SnapshotSiteClient {
   if (!apiKey) {
     throw new Error("Missing Snapshot Site API key");
   }
@@ -46,28 +60,64 @@ export function createApiKeyClient(apiKey: string, baseUrl = process.env.SNAPSHO
     apiKey,
     baseUrl,
     userAgent: MCP_USER_AGENT,
+    fetch: async (input, init) => {
+      const headers = new Headers(init?.headers);
+      headers.set("x-snapshotsiteapi-key", apiKey);
+      headers.set("user-agent", MCP_USER_AGENT);
+      applyForwardedNetworkHeaders(headers, forwardedHeaders);
+
+      return fetch(input, {
+        ...init,
+        headers,
+      });
+    },
   });
+}
+
+function applyForwardedNetworkHeaders(headers: Headers, forwardedHeaders?: ForwardedNetworkHeaders) {
+  if (!forwardedHeaders) {
+    return;
+  }
+
+  if (forwardedHeaders.xForwardedFor) {
+    headers.set("x-forwarded-for", forwardedHeaders.xForwardedFor);
+  }
+  if (forwardedHeaders.xRealIp) {
+    headers.set("x-real-ip", forwardedHeaders.xRealIp);
+  }
+  if (forwardedHeaders.trueClientIp) {
+    headers.set("true-client-ip", forwardedHeaders.trueClientIp);
+  }
+  if (forwardedHeaders.cfConnectingIp) {
+    headers.set("cf-connecting-ip", forwardedHeaders.cfConnectingIp);
+  }
 }
 
 export function createBearerClient(
   accessToken: string,
   baseUrl = process.env.SNAPSHOT_SITE_BASE_URL,
   requestId?: string,
+  forwardedHeaders?: ForwardedNetworkHeaders,
 ): SnapshotSiteClient {
   if (!accessToken) {
     throw new Error("Missing Snapshot Site product access token");
   }
 
+  const apiKey = process.env.SNAPSHOT_SITE_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing SNAPSHOT_SITE_API_KEY environment variable");
+  }
+
   return new SnapshotSiteClient({
-    apiKey: "__internal_bearer__",
+    apiKey,
     baseUrl,
     userAgent: MCP_USER_AGENT,
     fetch: async (input, init) => {
       const headers = new Headers(init?.headers);
-      headers.delete("X-SnapshotSiteAPI-Key");
-      headers.delete("x-snapshotsiteapi-key");
+      headers.set("x-snapshotsiteapi-key", apiKey);
       headers.set("authorization", `Bearer ${accessToken}`);
       headers.set("user-agent", MCP_USER_AGENT);
+      applyForwardedNetworkHeaders(headers, forwardedHeaders);
       if (requestId) {
         headers.set("x-request-id", requestId);
       }

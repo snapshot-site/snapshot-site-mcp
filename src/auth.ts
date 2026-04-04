@@ -14,7 +14,9 @@ const OIDC_INTROSPECTION_CLIENT_SECRET = String(process.env.OIDC_INTROSPECTION_C
 const ALLOW_API_KEY_AUTH = String(process.env.ALLOW_API_KEY_AUTH || "true").trim().toLowerCase() !== "false";
 const RESOURCE_DOCUMENTATION_URL = String(process.env.RESOURCE_DOCUMENTATION_URL || "https://snapshot-site.com/api-docs").trim();
 const RESOURCE_SERVER_URL = String(process.env.RESOURCE_SERVER_URL || "").trim().replace(/\/+$/, "");
+const RESOURCE_NAME = String(process.env.RESOURCE_NAME || "Snapshot Site MCP").trim();
 const REALM = String(process.env.AUTH_REALM || "snapshot-site-mcp").trim();
+const OIDC_DISCOVERY_CLIENT_ID = String(process.env.OIDC_DISCOVERY_CLIENT_ID || "").trim() || OIDC_AUDIENCE;
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
@@ -93,6 +95,10 @@ function getResourceMetadataUrl(req: IncomingMessage): string {
   return `${value}://${host}/.well-known/oauth-protected-resource`;
 }
 
+function getAuthorizationServerUrl(): string {
+  return RESOURCE_SERVER_URL || OIDC_ISSUER;
+}
+
 function buildWwwAuthenticateHeader(req: IncomingMessage, extras?: string[]): string {
   const parts = [`Bearer realm="${REALM}"`];
 
@@ -137,10 +143,18 @@ export function getProtectedResourceMetadata() {
 
   return {
     resource: RESOURCE_SERVER_URL || undefined,
-    authorization_servers: [OIDC_ISSUER],
+    resource_name: RESOURCE_NAME || undefined,
+    authorization_servers: [getAuthorizationServerUrl()],
     bearer_methods_supported: ["header"],
     scopes_supported: scopesSupported,
     resource_documentation: RESOURCE_DOCUMENTATION_URL || undefined,
+    preferred_client_id: OIDC_DISCOVERY_CLIENT_ID || undefined,
+    oauth_client_metadata: OIDC_DISCOVERY_CLIENT_ID
+      ? {
+          client_id: OIDC_DISCOVERY_CLIENT_ID,
+          token_endpoint_auth_method: "none",
+        }
+      : undefined,
   };
 }
 
