@@ -17,6 +17,10 @@ const RESOURCE_SERVER_URL = String(process.env.RESOURCE_SERVER_URL || "").trim()
 const RESOURCE_NAME = String(process.env.RESOURCE_NAME || "Snapshot Site MCP").trim();
 const REALM = String(process.env.AUTH_REALM || "snapshot-site-mcp").trim();
 const OIDC_DISCOVERY_CLIENT_ID = String(process.env.OIDC_DISCOVERY_CLIENT_ID || "").trim() || OIDC_AUDIENCE;
+const OIDC_SCOPES_SUPPORTED_RAW = String(process.env.OIDC_SCOPES_SUPPORTED || "").trim();
+const OIDC_SCOPES_SUPPORTED: string[] | null = OIDC_SCOPES_SUPPORTED_RAW
+  ? OIDC_SCOPES_SUPPORTED_RAW.split(/[\s,]+/).filter(Boolean)
+  : null;
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
@@ -139,7 +143,7 @@ export function getProtectedResourceMetadata() {
     return null;
   }
 
-  const scopesSupported = OIDC_REQUIRED_SCOPE ? [OIDC_REQUIRED_SCOPE] : undefined;
+  const scopesSupported = OIDC_SCOPES_SUPPORTED ?? (OIDC_REQUIRED_SCOPE ? [OIDC_REQUIRED_SCOPE] : undefined);
 
   return {
     resource: RESOURCE_SERVER_URL || undefined,
