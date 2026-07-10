@@ -1,13 +1,26 @@
 {
   "name": "@snapshot-site/mcp",
   "version": "0.1.1",
-  "description": "MCP server for the Snapshot Site API",
-  "homepage": "https://snapshot-site.com/api-docs",
+  "description": "Official MCP server for the Snapshot Site API — screenshots, visual diff, and AI webpage analysis for Claude, Cursor, ChatGPT, and MCP-compatible clients.",
+  "homepage": "https://snapshot-site.com/mcp-server",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snapshot-site/snapshot-site-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/snapshot-site/snapshot-site-mcp/issues"
+  },
   "keywords": [
     "mcp",
+    "mcp-server",
+    "model-context-protocol",
     "snapshot",
     "screenshot",
+    "screenshot-api",
     "visual-diff",
+    "visual-regression",
+    "ai-agents",
+    "claude",
     "api"
   ],
   "license": "MIT",
