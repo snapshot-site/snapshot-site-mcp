@@ -1,6 +1,6 @@
 {
   "name": "@snapshot-site/mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Official MCP server for the Snapshot Site API — screenshots, visual diff, and AI webpage analysis for Claude, Cursor, ChatGPT, and MCP-compatible clients.",
   "homepage": "https://snapshot-site.com/mcp-server",
   "repository": {
