@@ -17,61 +17,61 @@ Create your API token in Snapshot Site Console:
 - `analyze`
 - `compare`
 
-## Règles métier
+## Business rules
 
-### Deux modes d'usage
+### Two usage modes
 
-- Mode local simple :
-  - le client fournit `SNAPSHOT_SITE_API_KEY`
-  - le MCP appelle directement l'API Snapshot Site
-- Mode remote OAuth :
-  - le client s'authentifie via Zitadel/OIDC
-  - le MCP demande ensuite à `admin-snapshot` l'autorisation d'utiliser l'outil pour l'utilisateur final
-  - `admin-snapshot` renvoie un `productAccessToken`
+- Simple local mode:
+  - the client provides `SNAPSHOT_SITE_API_KEY`
+  - the MCP server calls the Snapshot Site API directly
+- Remote OAuth mode:
+  - the client authenticates through Zitadel/OIDC
+  - the MCP server then asks `admin-snapshot` for authorization to use the tool on behalf of the end user
+  - `admin-snapshot` returns a `productAccessToken`
 
-### Clé technique serveur
+### Server-side technical key
 
-- En mode remote OAuth, le MCP utilise aussi une API key serveur `SNAPSHOT_SITE_API_KEY`.
-- Cette clé technique ne représente pas l'utilisateur final.
-- Elle sert à :
-  - passer dans le pipeline standard de logs/usage côté `screenshot-api`
-  - rattacher les compteurs techniques et `ApiRequestLog`
-- Le plan et les quotas métier restent évalués sur l'utilisateur final porté par le bearer token puis par le `productAccessToken`.
+- In remote OAuth mode, the MCP server also uses a server-side `SNAPSHOT_SITE_API_KEY`.
+- This technical key does not represent the end user.
+- Its purpose is to:
+  - go through the standard logging/usage pipeline on the `screenshot-api` side
+  - attach technical counters and `ApiRequestLog`
+- Plan and business quotas are still evaluated against the end user carried by the bearer token and then by the `productAccessToken`.
 
 ### Candidate endpoints
 
-- Le MCP déclare ses `candidateEndpoints` à `admin-snapshot` avant exécution.
-- `screenshot` annonce aujourd'hui `["/api/v1/screenshot", "/api/v2/screenshot"]`.
-- `analyze` annonce `["/api/v3/analyze"]`.
-- `compare` annonce `["/api/v3/compare"]`.
-- L'exécution réelle de `screenshot` passe par le SDK officiel, donc vers `/api/v2/screenshot`.
+- The MCP server declares its `candidateEndpoints` to `admin-snapshot` before execution.
+- `screenshot` currently advertises `["/api/v1/screenshot", "/api/v2/screenshot"]`.
+- `analyze` advertises `["/api/v3/analyze"]`.
+- `compare` advertises `["/api/v3/compare"]`.
+- The actual execution of `screenshot` goes through the official SDK, and therefore hits `/api/v2/screenshot`.
 
 ### Quotas
 
-- Le MCP ne doit pas contourner les quotas métier.
-- Quand `screenshot-api` est correctement configurée, les appels MCP comptent dans le même quota global utilisateur que les appels API directs.
-- Les plans `hard` doivent être bloqués à la limite.
-- Les plans `soft` avec overage autorisé doivent continuer à passer.
+- The MCP server must not bypass business quotas.
+- When `screenshot-api` is configured correctly, MCP calls count against the same global user quota as direct API calls.
+- `hard` plans must be blocked at the limit.
+- `soft` plans with overage allowed must keep going through.
 
-### Logging et IP
+### Logging and IP
 
-- En mode remote OAuth, le MCP doit forwarder :
-  - `Authorization: Bearer <productAccessToken>` vers `screenshot-api`
+- In remote OAuth mode, the MCP server must forward:
+  - `Authorization: Bearer <productAccessToken>` to `screenshot-api`
   - `x-snapshotsiteapi-key: <SNAPSHOT_SITE_API_KEY>`
   - `x-request-id`
-  - les headers réseau utiles (`x-forwarded-for`, `x-real-ip`, `true-client-ip`, `cf-connecting-ip`) quand ils existent
-- Les requêtes MCP hébergées voient sinon l'IP du pod/proxy au lieu de l'IP utilisateur.
+  - the relevant network headers (`x-forwarded-for`, `x-real-ip`, `true-client-ip`, `cf-connecting-ip`) when present
+- Otherwise hosted MCP requests see the pod/proxy IP instead of the user IP.
 
-## Schéma Claude / OAuth / MCP
+## Claude / OAuth / MCP flow
 
 ```text
-1. Découverte
+1. Discovery
 
 Claude
   -> GET https://mcp.snapshot-site.com/.well-known/oauth-protected-resource
 
 MCP
-  -> répond:
+  -> responds:
      authorization_servers = https://mcp.snapshot-site.com
 ```
 
@@ -79,8 +79,8 @@ MCP
 2. OAuth
 
 Claude
-  -> doit connaître client_id
-  -> ouvre Zitadel:
+  -> must know client_id
+  -> opens Zitadel:
      https://mcp.snapshot-site.com/oauth/v2/authorize
      ?client_id=...
      &redirect_uri=https://claude.ai/api/mcp/auth_callback
@@ -92,26 +92,26 @@ Claude
 3. Token
 
 Zitadel
-  -> renvoie un access token à Claude
+  -> returns an access token to Claude
 
 Claude
-  -> appelle le MCP:
+  -> calls the MCP server:
      POST https://mcp.snapshot-site.com/
      Authorization: Bearer <access_token>
 ```
 
 ```text
-4. Validation côté MCP
+4. Validation on the MCP side
 
 snapshot-site-mcp
-  -> introspecte/valide le token auprès de Zitadel
-  -> extrait l'identité user:
+  -> introspects/validates the token against Zitadel
+  -> extracts the user identity:
      sub
      email
 ```
 
 ```text
-5. Autorisation produit
+5. Product authorization
 
 snapshot-site-mcp
   -> POST admin-snapshot /api/internal/mcp/authorize
@@ -124,16 +124,16 @@ snapshot-site-mcp
        requestId
 
 admin-snapshot
-  -> vérifie:
+  -> checks:
      user
      subscription
      plan
      allowed endpoints
-  -> signe un productAccessToken
+  -> signs a productAccessToken
 ```
 
 ```text
-6. Appel API produit
+6. Product API call
 
 snapshot-site-mcp
   -> POST screenshot-api /api/v2/screenshot
@@ -142,38 +142,38 @@ snapshot-site-mcp
 ```
 
 ```text
-7. Contrôle final côté screenshot-api
+7. Final check on the screenshot-api side
 
 screenshot-api
-  -> valide le productAccessToken
-  -> résout l'user réel
-  -> applique:
+  -> validates the productAccessToken
+  -> resolves the real user
+  -> applies:
      endpoint allowed
-     quota global user
+     global user quota
      hard vs soft overage
-  -> loggue:
+  -> logs:
      McpExecutionLog
      ApiRequestLog
      UsageCounter
 ```
 
+### Verifying the deployment
 
-```
+```bash
 curl -s https://mcp.snapshot-site.com/.well-known/oauth-protected-resource | jq
 curl -s https://mcp.snapshot-site.com/.well-known/openid-configuration | jq
 curl -i https://mcp.snapshot-site.com/
 curl -i -X POST https://mcp.snapshot-site.com/mcp -H 'content-type: application/json' --data '{}'
-
 ```
 
-### Manuel vs implicite
+### Manual vs implicit client_id
 
-- Le `client_id` n'est nécessaire que pour l'étape `Claude -> Zitadel /oauth/v2/authorize`.
-- Si Claude ne peut pas découvrir ce `client_id` avant cet appel, il doit être saisi manuellement dans l'UI du connecteur.
-- Le MCP ne peut pas l'injecter plus tard une fois le flow OAuth commencé.
-- Le serveur MCP peut publier un mode implicite expérimental en exposant un `preferred_client_id` dans `/.well-known/oauth-protected-resource`.
-- Les clients qui savent lire cette metadata pourront éventuellement éviter la saisie manuelle.
-- Les clients qui ignorent ce champ continueront à nécessiter un `client_id` manuel.
+- The `client_id` is only needed for the `Claude -> Zitadel /oauth/v2/authorize` step.
+- If Claude cannot discover that `client_id` before this call, it has to be entered manually in the connector UI.
+- The MCP server cannot inject it later once the OAuth flow has started.
+- The MCP server can publish an experimental implicit mode by exposing a `preferred_client_id` in `/.well-known/oauth-protected-resource`.
+- Clients that know how to read this metadata may then be able to skip the manual entry.
+- Clients that ignore this field will still require a manual `client_id`.
 
 These tools are annotated for MCP clients as:
 
@@ -269,10 +269,10 @@ Remote client configuration with direct API key header:
 ```json
 {
   "mcpServers": {
-        "Snapshot Site MCP": {
-          "command": "npx",
-          "args": [
-            "mcp-remote",
+    "Snapshot Site MCP": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
         "https://mcp.snapshot-site.com/mcp",
         "--header",
         "x-snapshotsiteapi-key: ss_live_xxx"
