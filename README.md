@@ -17,52 +17,29 @@ Create your API token in Snapshot Site Console:
 - `analyze`
 - `compare`
 
-## Business rules
+These tools are annotated for MCP clients as:
 
-### Two usage modes
+- read-only
+- idempotent
+- open-world
 
-- Simple local mode:
-  - the client provides `SNAPSHOT_SITE_API_KEY`
-  - the MCP server calls the Snapshot Site API directly
-- Remote OAuth mode:
-  - the client authenticates through Zitadel/OIDC
-  - the MCP server then asks `admin-snapshot` for authorization to use the tool on behalf of the end user
-  - `admin-snapshot` returns a `productAccessToken`
+They also include richer titles, category metadata, and example intents to improve tool selection in Claude Desktop and Cursor.
 
-### Server-side technical key
+## Two ways to connect
 
-- In remote OAuth mode, the MCP server also uses a server-side `SNAPSHOT_SITE_API_KEY`.
-- This technical key does not represent the end user.
-- Its purpose is to:
-  - go through the standard logging/usage pipeline on the `screenshot-api` side
-  - attach technical counters and `ApiRequestLog`
-- Plan and business quotas are still evaluated against the end user carried by the bearer token and then by the `productAccessToken`.
+**Hosted, with OAuth** — point your client at `https://mcp.snapshot-site.com/mcp`
+and sign in. There is no local process to run and no API key in your client
+config; the server resolves your account from the OAuth session.
 
-### Candidate endpoints
+**Local, with an API key** — run the package yourself over stdio and provide
+`SNAPSHOT_SITE_API_KEY`. The server calls the Snapshot Site API directly.
 
-- The MCP server declares its `candidateEndpoints` to `admin-snapshot` before execution.
-- `screenshot` currently advertises `["/api/v1/screenshot", "/api/v2/screenshot"]`.
-- `analyze` advertises `["/api/v3/analyze"]`.
-- `compare` advertises `["/api/v3/compare"]`.
-- The actual execution of `screenshot` goes through the official SDK, and therefore hits `/api/v2/screenshot`.
+Either way, calls count against the same plan quota as direct API calls. Nothing
+is metered differently because it came through MCP.
 
-### Quotas
+## OAuth discovery flow
 
-- The MCP server must not bypass business quotas.
-- When `screenshot-api` is configured correctly, MCP calls count against the same global user quota as direct API calls.
-- `hard` plans must be blocked at the limit.
-- `soft` plans with overage allowed must keep going through.
-
-### Logging and IP
-
-- In remote OAuth mode, the MCP server must forward:
-  - `Authorization: Bearer <productAccessToken>` to `screenshot-api`
-  - `x-snapshotsiteapi-key: <SNAPSHOT_SITE_API_KEY>`
-  - `x-request-id`
-  - the relevant network headers (`x-forwarded-for`, `x-real-ip`, `true-client-ip`, `cf-connecting-ip`) when present
-- Otherwise hosted MCP requests see the pod/proxy IP instead of the user IP.
-
-## Claude / OAuth / MCP flow
+What a client does when connecting to the hosted server:
 
 ```text
 1. Discovery
@@ -76,11 +53,11 @@ MCP
 ```
 
 ```text
-2. OAuth
+2. Authorization
 
 Claude
   -> must know client_id
-  -> opens Zitadel:
+  -> opens:
      https://mcp.snapshot-site.com/oauth/v2/authorize
      ?client_id=...
      &redirect_uri=https://claude.ai/api/mcp/auth_callback
@@ -91,71 +68,15 @@ Claude
 ```text
 3. Token
 
-Zitadel
-  -> returns an access token to Claude
-
 Claude
+  -> receives an access token
   -> calls the MCP server:
      POST https://mcp.snapshot-site.com/
      Authorization: Bearer <access_token>
 ```
 
-```text
-4. Validation on the MCP side
-
-snapshot-site-mcp
-  -> introspects/validates the token against Zitadel
-  -> extracts the user identity:
-     sub
-     email
-```
-
-```text
-5. Product authorization
-
-snapshot-site-mcp
-  -> POST admin-snapshot /api/internal/mcp/authorize
-     Authorization: Bearer <internal_service_jwt>
-     body:
-       zitadelSub
-       email
-       tool
-       candidateEndpoints
-       requestId
-
-admin-snapshot
-  -> checks:
-     user
-     subscription
-     plan
-     allowed endpoints
-  -> signs a productAccessToken
-```
-
-```text
-6. Product API call
-
-snapshot-site-mcp
-  -> POST screenshot-api /api/v2/screenshot
-     Authorization: Bearer <productAccessToken>
-     x-snapshotsiteapi-key: <SNAPSHOT_SITE_API_KEY>
-```
-
-```text
-7. Final check on the screenshot-api side
-
-screenshot-api
-  -> validates the productAccessToken
-  -> resolves the real user
-  -> applies:
-     endpoint allowed
-     global user quota
-     hard vs soft overage
-  -> logs:
-     McpExecutionLog
-     ApiRequestLog
-     UsageCounter
-```
+The server then validates the token against the issuer and resolves the account
+it belongs to before running the tool.
 
 ### Verifying the deployment
 
@@ -168,20 +89,11 @@ curl -i -X POST https://mcp.snapshot-site.com/mcp -H 'content-type: application/
 
 ### Manual vs implicit client_id
 
-- The `client_id` is only needed for the `Claude -> Zitadel /oauth/v2/authorize` step.
-- If Claude cannot discover that `client_id` before this call, it has to be entered manually in the connector UI.
-- The MCP server cannot inject it later once the OAuth flow has started.
-- The MCP server can publish an experimental implicit mode by exposing a `preferred_client_id` in `/.well-known/oauth-protected-resource`.
-- Clients that know how to read this metadata may then be able to skip the manual entry.
-- Clients that ignore this field will still require a manual `client_id`.
-
-These tools are annotated for MCP clients as:
-
-- read-only
-- idempotent
-- open-world
-
-They also include richer titles, category metadata, and example intents to improve tool selection in Claude Desktop and Cursor.
+- The `client_id` is only needed for the authorization step.
+- If your client cannot discover that `client_id` beforehand, enter it manually in the connector UI.
+- It cannot be injected later once the OAuth flow has started.
+- The server can publish an experimental implicit mode by exposing a `preferred_client_id` in `/.well-known/oauth-protected-resource`.
+- Clients that read this metadata may then skip the manual entry. Clients that ignore the field still require a manual `client_id`.
 
 ## Environment
 
