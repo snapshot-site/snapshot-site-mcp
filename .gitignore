@@ -2,3 +2,7 @@ build
 node_modules
 publish.md
 docs/internal-authorization.md
+
+# Registry DNS auth signing key — never commit
+key.pem
+*.pem
