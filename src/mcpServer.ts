@@ -9,8 +9,8 @@ import {
 import type { SupportedTool } from "./adminAuth.js";
 
 export const MCP_SERVER_NAME = "snapshot-site";
-export const MCP_SERVER_VERSION = "0.1.3";
-export const MCP_USER_AGENT = "@snapshot-site/mcp/0.1.3";
+export const MCP_SERVER_VERSION = "0.1.4";
+export const MCP_USER_AGENT = "@snapshot-site/mcp/0.1.4";
 
 export type ForwardedNetworkHeaders = {
   xForwardedFor?: string;
