@@ -7,10 +7,6 @@
 
 Official MCP server for the Snapshot Site API
 
-Create your API token in Snapshot Site Console:
-
-- https://console.snapshot-site.com
-
 ## Tools
 
 - `screenshot`
@@ -36,6 +32,36 @@ config; the server resolves your account from the OAuth session.
 
 Either way, calls count against the same plan quota as direct API calls. Nothing
 is metered differently because it came through MCP.
+
+## Credentials
+
+The hosted server needs no credential — you sign in through OAuth and the server
+resolves your account from the session. Skip this section unless you run the
+server yourself over stdio.
+
+For local stdio mode you need a Snapshot Site API key.
+
+1. Sign up for a [Snapshot Site Console](https://console.snapshot-site.com/) account.
+2. Create an API key on the [API Keys](https://console.snapshot-site.com/api-keys) page.
+
+   ![Snapshot Site Console — API Keys](assets/console-apikeys.png)
+3. Pass the key to the server as the `SNAPSHOT_SITE_API_KEY` environment variable.
+4. Leave `SNAPSHOT_SITE_BASE_URL` at its default (`https://api.prod.ss.snapshot-site.com`)
+   unless you're pointed at a self-hosted or staging instance.
+
+## Compatibility
+
+Requires Node.js 20.9 or later. Built against `@modelcontextprotocol/sdk` v1.28
+and tested with Claude Desktop and Cursor over stdio, and with any client that
+speaks the streamable HTTP transport against the hosted endpoint.
+
+## Usage
+
+Not sure which options to use? Preview a capture and its parameters in the
+[Screenshot](https://console.snapshot-site.com/screenshot) console playground
+before wiring them into a tool call.
+
+![Snapshot Site Console — Screenshot playground](assets/console-screenshot.png)
 
 ## OAuth discovery flow
 
