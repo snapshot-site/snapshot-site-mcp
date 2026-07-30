@@ -124,9 +124,27 @@ function copyResponseHeaders(upstream: Response, res: ServerResponse) {
   });
 }
 
+// RFC 8414 inserts the well-known segment ahead of the issuer path, while MCP
+// clients additionally probe the variant with the resource path appended. Both
+// spellings have to answer, and both have to describe this host.
+const AS_METADATA_BASE_PATHS = [
+  "/.well-known/oauth-authorization-server",
+  "/.well-known/openid-configuration",
+];
+
+function isAuthorizationServerMetadataPath(pathname: string): boolean {
+  return AS_METADATA_BASE_PATHS.some(
+    (base) => pathname === base || pathname.startsWith(`${base}/`),
+  );
+}
+
 function rewriteOidcConfiguration(payload: Record<string, unknown>, externalBaseUrl: string) {
   const rewritten = { ...payload };
   const replacements = [
+    // RFC 8414 3.3: the issuer returned MUST equal the one the client derived
+    // the metadata URL from. Clients discover us at externalBaseUrl, so saying
+    // auth.snapshot-site.com here makes conforming clients reject the document.
+    "issuer",
     "authorization_endpoint",
     "token_endpoint",
     "device_authorization_endpoint",
@@ -197,7 +215,11 @@ async function proxyOidcRequest(req: IncomingMessage, res: ServerResponse, url: 
   try {
     const issuerUrl = new URL(OIDC_ISSUER);
     const externalBaseUrl = getExternalBaseUrl(req);
-    const upstreamUrl = `${OIDC_ISSUER}${url.pathname}${url.search}`;
+    // Zitadel only publishes the OIDC spelling, so every authorization-server
+    // metadata path we accept resolves to that single upstream document.
+    const isMetadata = isAuthorizationServerMetadataPath(url.pathname);
+    const upstreamPath = isMetadata ? "/.well-known/openid-configuration" : url.pathname;
+    const upstreamUrl = `${OIDC_ISSUER}${upstreamPath}${isMetadata ? "" : url.search}`;
     const headers = new Headers();
     const contentType = getHeaderValue(req, "content-type");
     const accept = getHeaderValue(req, "accept");
@@ -246,7 +268,7 @@ async function proxyOidcRequest(req: IncomingMessage, res: ServerResponse, url: 
       }
     }
 
-    if (url.pathname === "/.well-known/openid-configuration" && upstream.ok) {
+    if (isMetadata && upstream.ok) {
       const payload = (await upstream.json()) as Record<string, unknown>;
       sendJson(res, upstream.status, rewriteOidcConfiguration(payload, externalBaseUrl));
       return;
@@ -419,7 +441,7 @@ const httpServer = createServer(async (req, res) => {
   }
 
   if (
-    url.pathname === "/.well-known/openid-configuration" ||
+    isAuthorizationServerMetadataPath(url.pathname) ||
     url.pathname.startsWith("/oauth/v2/") ||
     url.pathname === "/oidc/v1/end_session"
   ) {
